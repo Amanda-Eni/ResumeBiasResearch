@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.venv/
+env/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data — too large for GitHub (download from FairCVtest repo)
+data/raw/*.npy
+data/raw/*.mat
+data/processed/*
+!data/processed/.gitkeep
+data/synthetic/*
+!data/synthetic/.gitkeep
+
+# Trained models
+results/models/*.pkl
+results/models/*.joblib
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
