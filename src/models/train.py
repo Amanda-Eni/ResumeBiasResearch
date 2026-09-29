@@ -1,114 +1,94 @@
 """
-Train Logistic Regression, Random Forest, and XGBoost classifiers
-for resume screening prediction.
+Train LR, RF, XGBoost on the Blind (unbiased) labels — the baseline.
+Save trained models for later use in the counterfactual experiment.
 """
-import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split, StratifiedKFold
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-import xgboost as xgb
 import joblib
 from pathlib import Path
-import yaml
-
-def build_preprocessor(numerical_cols: list, categorical_cols: list) -> ColumnTransformer:
-    """
-    Build preprocessing pipeline for mixed data types.
-    """
-    preprocessor = ColumnTransformer(
-        transformers=[
-            ('num', StandardScaler(), numerical_cols),
-            ('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), categorical_cols)
-        ],
-        remainder='drop'
-    )
-    return preprocessor
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import (accuracy_score, precision_score, recall_score,
+                             f1_score, roc_auc_score)
+import xgboost as xgb
 
 
-def train_models(X_train: pd.DataFrame, 
-                 y_train: pd.Series,
-                 numerical_cols: list,
-                 categorical_cols: list,
-                 random_state: int = 42) -> dict:
-    """
-    Train all three model types with preprocessing pipeline.
-    
-    Returns:
-        dict mapping model_name -> trained Pipeline
-    """
-    preprocessor = build_preprocessor(numerical_cols, categorical_cols)
-    
-    models = {
-        'logistic_regression': Pipeline([
-            ('preprocessor', preprocessor),
-            ('classifier', LogisticRegression(
-                max_iter=1000, 
-                random_state=random_state,
-                class_weight='balanced'  # Helps with imbalanced selection outcomes
-            ))
-        ]),
-        'random_forest': Pipeline([
-            ('preprocessor', preprocessor),
-            ('classifier', RandomForestClassifier(
-                n_estimators=100,
-                max_depth=10,
-                min_samples_split=5,
-                random_state=random_state,
-                class_weight='balanced',
-                n_jobs=-1
-            ))
-        ]),
-        'xgboost': Pipeline([
-            ('preprocessor', preprocessor),
-            ('classifier', xgb.XGBClassifier(
-                n_estimators=100,
-                max_depth=5,
-                learning_rate=0.1,
-                random_state=random_state,
-                scale_pos_weight=1,  # Adjust based on class balance
-                eval_metric='logloss',
-                use_label_encoder=False
-            ))
-        ])
-    }
-    
-    trained = {}
-    for name, pipeline in models.items():
-        print(f"Training {name}...")
-        pipeline.fit(X_train, y_train)
-        trained[name] = pipeline
-        print(f"  ✓ {name} trained")
-    
-    return trained
-
-
-def evaluate_model(model, X_test: pd.DataFrame, y_test: pd.Series) -> dict:
-    """
-    Compute standard ML performance metrics.
-    """
-    y_pred = model.predict(X_test)
-    y_proba = model.predict_proba(X_test)[:, 1] if hasattr(model, 'predict_proba') else None
-    
+def get_models(random_state: int = 42) -> dict:
+    """Return the three model configurations from the proposal."""
     return {
-        'accuracy': accuracy_score(y_test, y_pred),
-        'precision': precision_score(y_test, y_pred, zero_division=0),
-        'recall': recall_score(y_test, y_pred, zero_division=0),
-        'f1': f1_score(y_test, y_pred, zero_division=0),
-        'predictions': y_pred,
-        'probabilities': y_proba
+        'logistic_regression': LogisticRegression(
+            max_iter=2000, class_weight='balanced', random_state=random_state,
+        ),
+        'random_forest': RandomForestClassifier(
+            n_estimators=200, max_depth=15, min_samples_split=5,
+            class_weight='balanced', random_state=random_state, n_jobs=-1,
+        ),
+        'xgboost': xgb.XGBClassifier(
+            n_estimators=200, max_depth=6, learning_rate=0.1,
+            random_state=random_state, eval_metric='logloss',
+        ),
     }
 
 
-def save_models(models: dict, output_dir: str):
-    """Save trained models to disk."""
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-    
+def evaluate_classifier(model, X, y) -> dict:
+    """Standard classification metrics."""
+    y_pred = model.predict(X)
+    y_proba = model.predict_proba(X)[:, 1]
+    return {
+        'accuracy': accuracy_score(y, y_pred),
+        'precision': precision_score(y, y_pred, zero_division=0),
+        'recall': recall_score(y, y_pred, zero_division=0),
+        'f1': f1_score(y, y_pred, zero_division=0),
+        'auc': roc_auc_score(y, y_proba),
+    }
+
+
+def train_all(prepared_path: str = 'data/processed/prepared_data.npz',
+              output_dir: str = 'results/models') -> dict:
+    """Train all three models on Blind labels and save."""
+    data = np.load(prepared_path)
+    X_train = data['X_train']
+    y_train = data['y_train_blind']
+    X_test = data['X_test']
+    y_test = data['y_test_blind']
+
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    models = get_models()
+    results = {}
+
     for name, model in models.items():
-        joblib.dump(model, output_path / f"{name}.pkl")
-        print(f"Saved {name} to {output_path / f'{name}.pkl'}")
+        print(f"\nTraining {name}...")
+        model.fit(X_train, y_train)
+
+        train_metrics = evaluate_classifier(model, X_train, y_train)
+        test_metrics = evaluate_classifier(model, X_test, y_test)
+
+        results[name] = {'train': train_metrics, 'test': test_metrics}
+        joblib.dump(model, Path(output_dir) / f'{name}_blind.pkl')
+
+        print(f"  Train: acc={train_metrics['accuracy']:.3f}, "
+              f"F1={train_metrics['f1']:.3f}, AUC={train_metrics['auc']:.3f}")
+        print(f"  Test:  acc={test_metrics['accuracy']:.3f}, "
+              f"F1={test_metrics['f1']:.3f}, AUC={test_metrics['auc']:.3f}")
+
+    import pandas as pd
+    rows = []
+    for name, m in results.items():
+        rows.append({
+            'model': name,
+            'train_accuracy': m['train']['accuracy'],
+            'train_f1': m['train']['f1'],
+            'test_accuracy': m['test']['accuracy'],
+            'test_precision': m['test']['precision'],
+            'test_recall': m['test']['recall'],
+            'test_f1': m['test']['f1'],
+            'test_auc': m['test']['auc'],
+        })
+    df = pd.DataFrame(rows)
+    df.to_csv('results/tables/baseline_model_performance.csv', index=False)
+    print("\nSaved metrics to results/tables/baseline_model_performance.csv")
+
+    return results
+
+
+if __name__ == '__main__':
+    train_all()

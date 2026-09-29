@@ -89,3 +89,6 @@ def compute_all_fairness_metrics(y_true: np.ndarray,
         'equal_opportunity_difference': equal_opportunity_difference(y_true, y_pred, sensitive),
         'disparate_impact_ratios': disparate_impact_ratio(y_pred, sensitive)
     }
+
+# Alias for notebook compatibility
+compute_all = compute_all_fairness_metrics

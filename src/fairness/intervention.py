@@ -1,106 +1,66 @@
 """
-Fairness interventions: reweighting, adversarial debiasing.
-Implements the "before/after" comparison for your proposal.
+Fairness intervention via sample reweighting.
+The core before/after comparison for the proposal.
 """
 import numpy as np
-import pandas as pd
-from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.utils.class_weight import compute_sample_weight
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
-from typing import Optional
 
-def compute_reweighting_weights(y: np.ndarray,
-                                 sensitive: np.ndarray,
-                                 base_weights: Optional[np.ndarray] = None) -> np.ndarray:
+
+def compute_reweighting_weights(y: np.ndarray, sensitive: np.ndarray) -> np.ndarray:
     """
-    Compute sample weights for fairness-aware training.
-    
-    This implements the "reweighting" intervention: examples from underrepresented
-    or disadvantaged groups receive greater importance during training.
-    
-    Approach: weight each sample by the inverse of its group's selection rate
-    relative to the overall selection rate.
+    Up-weight samples from groups with low positive rates.
+    Weight = overall_rate / group_rate, normalized.
     """
-    n = len(y)
-    weights = np.ones(n)
-    
-    groups = np.unique(sensitive)
-    overall_rate = y.mean()
-    
-    for g in groups:
+    weights = np.ones(len(y))
+    overall = y.mean()
+    for g in np.unique(sensitive):
         mask = sensitive == g
         group_rate = y[mask].mean()
-        
         if group_rate > 0:
-            # Weight = overall_rate / group_rate
-            # Groups with lower selection rates get higher weights
-            group_weight = overall_rate / group_rate
-            weights[mask] = group_weight
-    
-    # Normalize to sum to n
-    weights = weights / weights.mean()
-    
-    if base_weights is not None:
-        weights = weights * base_weights
-        weights = weights / weights.mean()
-    
-    return weights
+            weights[mask] = overall / group_rate
+    return weights / weights.mean()
 
 
-class ReweightedClassifier(BaseEstimator, ClassifierMixin):
+def infer_sensitive_from_names(names: np.ndarray,
+                                female_names=None,
+                                black_names=None) -> np.ndarray:
     """
-    Wrapper that applies fairness reweighting to any sklearn classifier.
+    Infer approximate sensitive group from first name.
+    Uses name lists from Bertrand & Mullainathan (2004).
     """
-    def __init__(self, base_classifier=None, sensitive_col=None, random_state=42):
-        self.base_classifier = base_classifier or LogisticRegression(max_iter=1000)
-        self.sensitive_col = sensitive_col
-        self.random_state = random_state
-        self.scaler = None
-    
-    def fit(self, X, y):
-        # Extract sensitive attribute
-        sensitive = X[self.sensitive_col].values if isinstance(X, pd.DataFrame) else X[:, -1]
-        
-        # Compute fairness weights
-        weights = compute_reweighting_weights(y, sensitive)
-        
-        # Store scaler if using raw features
-        self.scaler = StandardScaler()
-        
-        # Fit base classifier with sample weights
-        self.base_classifier.fit(X, y, sample_weight=weights)
-        return self
-    
-    def predict(self, X):
-        return self.base_classifier.predict(X)
-    
-    def predict_proba(self, X):
-        return self.base_classifier.predict_proba(X)
+    if female_names is None:
+        female_names = {'mary','patricia','jennifer','linda','elizabeth',
+                        'barbara','susan','jessica','sarah','karen','nancy',
+                        'lisa','betty','margaret','sandra','ashley','kimberly',
+                        'emily','donna','michelle','carol','amanda','melissa',
+                        'deborah','stephanie','dorothy','rebecca','sharon',
+                        'laura','cynthia','kathleen','amy','angela','shirley',
+                        'anna','brenda','pamela','emma','nicole','helen',
+                        'samantha','katherine','christine','debra','rachel',
+                        'carolyn','janet','catherine','maria','heather',
+                        'diane','ruth','julie','olivia','joyce','virginia',
+                        'victoria','kelly','lauren','christina','joan',
+                        'evelyn','judith','megan','cheryl','andrea','hannah',
+                        'martha','jacqueline','frances','gloria','ann',
+                        'teresa','kathryn','sara','janice','jean','alice',
+                        'madison','doris','abigail','julia','judy','grace',
+                        'denise','amber','marilyn','beverly','danielle',
+                        'theresa','sophia','marie','diana','brittany',
+                        'natalie','isabella','charlotte','rose','alexis',
+                        'kayla','pim','christin'}  # Pim/Christin from your sample
+    if black_names is None:
+        black_names = {'lakisha','keisha','tamika','latoya','shanice',
+                       'tanisha','aisha','ebony','latonya','kenya',
+                       'jasmine','precious','diamond','tierra','raven',
+                       'iyana','jalisa','kiara','maliyah','nyla'}
 
-
-def apply_reweighting_intervention(X_train: pd.DataFrame,
-                                    y_train: np.ndarray,
-                                    sensitive_col: str,
-                                    model_type: str = 'logistic_regression') -> object:
-    """
-    Apply reweighting intervention to a training dataset.
-    
-    This is the core "before vs after" experiment:
-    1. Train model WITHOUT reweighting → measure bias
-    2. Train model WITH reweighting → measure bias again
-    3. Compare fairness metrics
-    """
-    from src.models.train import train_models, build_preprocessor
-    
-    # Extract sensitive attribute
-    sensitive = X_train[sensitive_col].values
-    
-    # Compute fairness weights
-    weights = compute_reweighting_weights(y_train, sensitive)
-    
-    # Train with weights
-    # Note: For tree models, sklearn's RandomForestClassifier and XGBoost
-    # accept sample_weight in fit()
-    
-    return weights  # The training script should use these weights
+    groups = []
+    for n in names:
+        first = str(n).strip().split()[0].lower()
+        if first in black_names:
+            groups.append('black')
+        elif first in female_names:
+            groups.append('female')
+        else:
+            groups.append('other')
+    return np.array(groups)
