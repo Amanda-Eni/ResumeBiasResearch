@@ -1,0 +1,4 @@
+Model,DPD,EOD,Min DIR
+Logistic Regression (Base),0.306,0.081,0.512
+Random Forest (Tuned),0.02,0.147,0.963
+XGBoost (Tuned),0.002,0.231,0.996

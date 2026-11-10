@@ -1,8 +1,8 @@
-from sklearn.model_selection import GridSearchCV, cross_val_score
+from sklearn.model_selection import GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
 import xgboost as xgb
 import numpy as np
-import pandas as pd
+import joblib
 
 data = np.load('data/processed/prepared_data.npz')
 X_train, y_train = data['X_train'], data['y_train_blind']
@@ -38,7 +38,7 @@ xgb_grid = {
 }
 xgb_search = GridSearchCV(
     xgb.XGBClassifier(n_estimators=300, eval_metric='logloss',
-                      use_label_encoder=False, random_state=42, n_jobs=-1),
+                      random_state=42, n_jobs=-1),
     xgb_grid, cv=5, scoring='roc_auc', n_jobs=-1, verbose=2,
 )
 xgb_search.fit(X_train, y_train)
@@ -52,6 +52,15 @@ print(f"XGB tuned — train: {train_acc:.3f}, test: {test_acc:.3f}, "
       f"gap: {train_acc - test_acc:.3f}")
 
 # Save tuned models
-import joblib
 joblib.dump(rf_best,  'results/models/random_forest_tuned.pkl')
 joblib.dump(xgb_best, 'results/models/xgboost_tuned.pkl')
+
+# Save metrics for the report
+import pandas as pd
+
+tuned_results = [
+    {'model': 'random_forest', 'train_acc': rf_best.score(X_train, y_train), 'test_acc': rf_best.score(X_test, y_test)},
+    {'model': 'xgboost',       'train_acc': xgb_best.score(X_train, y_train), 'test_acc': xgb_best.score(X_test, y_test)},
+]
+pd.DataFrame(tuned_results).to_csv('results/tables/tuned_model_performance.csv', index=False)
+print("Saved metrics to results/tables/tuned_model_performance.csv")
