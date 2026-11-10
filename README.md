@@ -18,10 +18,11 @@ This project uses the FairCVdb synthetic resume dataset to investigate whether m
    - `03_bias_experiment.ipynb` (Counterfactual bio test and label-type comparison)
    - `04_fairness_intervention.ipynb` (Fairness metrics and reweighting)
    - `05_results_visualization.ipynb`
-   - `06_shap_analysis.ipynb`
+   - `07_shap_analysis.ipynb` (Feature importance)
+   - `07_threshold_optimizer.ipynb` (Post-processing and unawareness mitigation tests)
 
 ## Key Findings
 - **Accuracy hides bias:** Models trained on biased labels perform just as accurately on standard metrics as those trained on unbiased labels.
 - **Gender bias survives training:** The models show strong demographic parity differences and disparate impact ratios below the 0.80 legal threshold.
 - **Binarization hides ethnicity bias:** A continuous regression robustness check reveals a massive ethnicity gap (0.19) that is masked by binary classification.
-- **Reweighting fails:** Sample reweighting does not fix bias that is structurally encoded in the training labels.
+- **Mitigation techniques fall short:** Sample reweighting, ThresholdOptimizer post-processing, and dropping demographic features all fail to fully fix the bias, indicating the bias is structurally embedded in the qualification features themselves.

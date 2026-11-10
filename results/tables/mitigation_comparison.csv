@@ -1,4 +1,4 @@
 Method,DPD,EOD,Min DIR
 Baseline (LR),0.306,0.081,0.512
 ThresholdOptimizer,0.269,0.028,0.564
-Drop Demographics,0.218,,0.639
+Drop Demographics,0.218,0.06,0.639
